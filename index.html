@@ -1,147 +1,159 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Autotune with Tone.js</title>
-    <script src="https://unpkg.com/tone@14/build/Tone.js"></script>
-    <style>
-        body { font-family: 'Times New Roman'; text-align: center; padding: 20px; background:linear-gradient(to left, #922727, #cd5555, #922727); }
-        button { padding: 15px 30px; font-size: 20px; margin: 10px; background: #f15e5e; color: white; border: none; border-radius: 5px; cursor: pointer; }
-        button:hover { background: #f47171; }
-        #status { font-size: 30px; font-weight: bold; margin: 20px; }
-        canvas { border: 1px solid #ccc; background: #a73232; margin: 10px; }
-        .info { margin: 10px; font-size: 18px; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Autotune with Tone.js</title>
+  <script src="https://unpkg.com/tone@14/build/Tone.js"></script>
+  <style>
+    body { font-family: 'Times New Roman'; text-align: center; padding: 20px; background:linear-gradient(to left, #922727, #cd5555, #922727); }
+    button { padding: 15px 30px; font-size: 20px; margin: 10px; background: #f15e5e; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    button:hover { background: #f47171; }
+    #status { font-size: 30px; font-weight: bold; margin: 20px; }
+    canvas { border: 1px solid #ccc; background: #a73232; margin: 10px; }
+    .info { margin: 10px; font-size: 18px; }
+  </style>
 </head>
 <body>
-    <h1>🎤 Real-Time Autotune</h1>
-    <p>Click start, allow mic, and sing! Watch pitch detection & hear corrected voice.</p>
-    <button id="startBtn">Start Autotune</button>
-    <div id="status">Ready – click to begin</div>
-    <canvas id="waveform" width="800" height="200"></canvas>
-    <div class="info">Detected: <span id="note">--</span> <span id="freq">--</span> Hz | Target: <span id="targetNote">--</span> <span id="targetFreq">--</span> Hz</div>
-    <div class="info">Shift: <span id="shift">--</span> semitones</div>
+  <h1>🎤 Real-Time Autotune</h1>
+  <p>Click start, allow mic, and sing! Watch pitch detection & hear corrected voice.</p>
+  <button id="startBtn">Start Autotune</button>
+  <div id="status">Ready – click to begin</div>
+  <canvas id="waveform" width="800" height="200"></canvas>
+  <div class="info">Detected: <span id="note">--</span> <span id="freq">--</span> Hz | Target: <span id="targetNote">--</span> <span id="targetFreq">--</span> Hz</div>
+  <div class="info">Shift: <span id="shift">--</span> semitones</div>
 
-    <script>
-        let stream = null;
-        let mic = null;
-        let pitchShift = null;
-        let analyser = null;
-        let processor = null;
-        let rafId = null;
-        let isActive = false;
+  <script>
+    let mic = null;
+    let pitchShift = null;
+    let analyser = null;
+    let rafId = null;
+    let isActive = false;
 
-        const startBtn = document.getElementById('startBtn');
-        const status = document.getElementById('status');
-        const noteEl = document.getElementById('note');
-        const freqEl = document.getElementById('freq');
-        const targetNoteEl = document.getElementById('targetNote');
-        const targetFreqEl = document.getElementById('targetFreq');
-        const shiftEl = document.getElementById('shift');
+    const startBtn = document.getElementById('startBtn');
+    const status = document.getElementById('status');
+    const noteEl = document.getElementById('note');
+    const freqEl = document.getElementById('freq');
+    const targetNoteEl = document.getElementById('targetNote');
+    const targetFreqEl = document.getElementById('targetFreq');
+    const shiftEl = document.getElementById('shift');
 
-        // Full chromatic scale frequencies (C4 to B4, A4=440Hz)
-        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-        const baseFreqs = noteNames.map((name, i) => 440 * Math.pow(2, (i - 9) / 12)); // C4 ~261.6Hz
+    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const baseFreqs = noteNames.map((name, i) => 440 * Math.pow(2, (i - 9) / 12));
 
-        startBtn.onclick = async () => {
-            if (!isActive) {
-                await Tone.start();
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } });
-                    mic = new Tone.UserMedia();
-                    await mic.open();
-                    analyser = new Tone.Analyser('waveform', 1024);
+    startBtn.onclick = async () => {
+      if (!isActive) {
+        try {
+          await Tone.start();
 
-                    // Pitch shift effect
-                    pitchShift = new Tone.PitchShift(0).toDestination();
+          mic = new Tone.UserMedia();
+          await mic.open();
 
-                    // Connect mic -> analyser -> pitchShift
-                    mic.connect(analyser);
-                    mic.connect(pitchShift);
+          analyser = new Tone.Analyser('waveform', 1024);
+          pitchShift = new Tone.PitchShift(0).toDestination();
 
-                    // Pitch detection loop
-                    loop();
+          mic.connect(analyser);
+          mic.connect(pitchShift);
 
-                    status.textContent = '🎵 Autotune ON – Sing into your mic!';
-                    startBtn.textContent = 'Stop Autotune';
-                    isActive = true;
-                } catch (err) {
-                    status.textContent = '❌ Mic error: ' + err.message;
-                }
-            } else {
-                stopAutotune();
-            }
-        };
+          isActive = true;
+          startBtn.textContent = 'Stop Autotune';
+          status.textContent = '🎵 Autotune ON – Sing into your mic!';
 
-        function loop() {
-            if (!isActive) return;
-            const buffer = analyser.getValue('waveform');
-            const detectedFreq = autoCorrelate(buffer)[0];
-            if (detectedFreq > 50) {
-                const semitones = getSemitoneShift(detectedFreq);
-                pitchShift.pitch = semitones;
-                updateDisplay(detectedFreq, semitones);
-            }
-            rafId = requestAnimationFrame(loop);
+          loop();
+        } catch (err) {
+          status.textContent = '❌ Mic error: ' + err.message;
         }
+      } else {
+        stopAutotune();
+      }
+    };
 
-        function autoCorrelate(buf) { // Autocorrelation pitch detection [web:1]
-            const SIZE = buf.length;
-            let bestOffset = 0;
-            let bestCorr = 0;
-            let rms = 0;
-            for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
-            rms = Math.sqrt(rms / SIZE);
-            if (rms < 0.01) return [-1];
+    function loop() {
+      if (!isActive || !analyser) return;
 
-            const step = 10; // Resolution
-            for (let offset = 60; offset < SIZE / 2; offset += step) {
-                let corr = 0;
-                for (let i = 0; i < SIZE - offset; i++) corr += buf[i] * buf[i + offset];
-                if (corr > bestCorr) {
-                    bestCorr = corr;
-                    bestOffset = offset;
-                }
-            }
-            return [Tone.context.sampleRate / bestOffset];
+      const buffer = analyser.getValue();
+      const detectedFreq = autoCorrelate(buffer)[0];
+
+      if (detectedFreq > 50) {
+        const semitones = getSemitoneShift(detectedFreq);
+        pitchShift.pitch = semitones;
+        updateDisplay(detectedFreq, semitones);
+      }
+
+      rafId = requestAnimationFrame(loop);
+    }
+
+    function autoCorrelate(buf) {
+      const SIZE = buf.length;
+      let bestOffset = -1;
+      let bestCorr = 0;
+      let rms = 0;
+
+      for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+      rms = Math.sqrt(rms / SIZE);
+      if (rms < 0.01) return [-1];
+
+      for (let offset = 60; offset < SIZE / 2; offset += 1) {
+        let corr = 0;
+        for (let i = 0; i < SIZE - offset; i++) {
+          corr += buf[i] * buf[i + offset];
         }
-
-        function getSemitoneShift(freq) {
-            let minDiff = Infinity;
-            let bestShift = 0;
-            for (let i = 0; i < baseFreqs.length; i++) {
-                const target = baseFreqs[i];
-                const diff = Math.abs(freq - target);
-                if (diff < minDiff) {
-                    minDiff = diff;
-                    bestShift = i - 9; // Relative to A4 index 9
-                }
-            }
-            return Math.round((12 * Math.log2(freq / baseFreqs[bestShift + 9])));
+        if (corr > bestCorr) {
+          bestCorr = corr;
+          bestOffset = offset;
         }
+      }
 
-        function updateDisplay(freq, shift) {
-            const noteIdx = (9 + shift + 12 * 4) % 12; // Around A4
-            noteEl.textContent = noteNames[noteIdx];
-            freqEl.textContent = freq.toFixed(0);
-            const targetFreq = freq * Math.pow(2, shift / 12);
-            targetNoteEl.textContent = noteNames[(noteIdx + shift + 12) % 12];
-            targetFreqEl.textContent = targetFreq.toFixed(0);
-            shiftEl.textContent = shift;
-        }
+      return [bestOffset > 0 ? Tone.context.sampleRate / bestOffset : -1];
+    }
 
-        function stopAutotune() {
-            if (stream) stream.getTracks().forEach(track => track.stop());
-            if (mic) mic.close();
-            if (rafId) cancelAnimationFrame(rafId);
-            if (pitchShift) pitchShift.dispose();
-            status.textContent = 'Stopped.';
-            startBtn.textContent = 'Start Autotune';
-            isActive = false;
-            Tone.context.close();
-            Tone.context = new Tone.Context();
-        }
-    </script>
+    function getSemitoneShift(freq) {
+      const midi = Math.round(69 + 12 * Math.log2(freq / 440));
+      const targetFreq = 440 * Math.pow(2, (midi - 69) / 12);
+      return Math.round(12 * Math.log2(targetFreq / freq));
+    }
+
+    function updateDisplay(freq, shift) {
+      const midi = Math.round(69 + 12 * Math.log2(freq / 440));
+      const noteIdx = ((midi % 12) + 12) % 12;
+      const octave = Math.floor(midi / 12) - 1;
+
+      noteEl.textContent = noteNames[noteIdx] + octave;
+      freqEl.textContent = freq.toFixed(0);
+
+      const targetFreq = freq * Math.pow(2, shift / 12);
+      const targetMidi = Math.round(69 + 12 * Math.log2(targetFreq / 440));
+      const targetNoteIdx = ((targetMidi % 12) + 12) % 12;
+      const targetOctave = Math.floor(targetMidi / 12) - 1;
+
+      targetNoteEl.textContent = noteNames[targetNoteIdx] + targetOctave;
+      targetFreqEl.textContent = targetFreq.toFixed(0);
+      shiftEl.textContent = shift;
+    }
+
+    async function stopAutotune() {
+      isActive = false;
+      if (rafId) cancelAnimationFrame(rafId);
+
+      if (mic) {
+        await mic.close();
+        mic.dispose();
+        mic = null;
+      }
+
+      if (pitchShift) {
+        pitchShift.dispose();
+        pitchShift = null;
+      }
+
+      if (analyser) {
+        analyser.dispose();
+        analyser = null;
+      }
+
+      status.textContent = 'Stopped.';
+      startBtn.textContent = 'Start Autotune';
+    }
+  </script>
 </body>
 </html>
